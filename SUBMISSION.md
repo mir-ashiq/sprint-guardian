@@ -74,7 +74,7 @@ Forge, Rovo agents/skills/MCP, Jira REST, Bitbucket, KVS, React (UI Kit), Node.j
 - [x] Category: Apps for Software Teams
 - [x] Bonus targets: Best Agents (rovo:agent + skills), Best app with Atlassian MCP (rovo:mcp)
 - [x] Installation link + test instructions (DEPLOY.md)
-- [x] Public repo with license (Apache-2.0)
+- [ ] GitHub repo created + pushed (setup: GITHUB-SETUP.md; URL: __________)
 - [x] Demo video < 5 min on YouTube (script in VIDEO-SCRIPT.md; record before Dec 22)
 - [x] Explanation of Atlassian technology use (above + README)
 - [x] Teamwork Graph scopes removed (app no longer claims unused permissions — cleaner approval)
