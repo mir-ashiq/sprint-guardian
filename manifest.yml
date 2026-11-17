@@ -1,0 +1,247 @@
+# Sprint Guardian — the AI risk radar for Jira sprints
+# Codegeist 2026: "Build with context. Ship with confidence."
+# Watches every sprint like a tech lead: detects risk signals, explains them,
+# and lets a Rovo agent + human resolve them together.
+
+modules:
+  # ---------- UI surfaces ----------
+  jira:globalPage:
+    - key: guardian-command-center
+      resource: main-ui
+      resolver:
+        function: resolver
+      render: native
+      title: Sprint Guardian
+
+  jira:issuePanel:
+    - key: guardian-risk-radar
+      resource: main-ui
+      resolver:
+        function: resolver
+      render: native
+      title: Risk Radar
+      icon: resource:static-assets;icons/radar.svg
+
+  # ---------- AI brain ----------
+  rovo:agent:
+    - key: sprint-guardian-agent
+      name: Sprint Guardian
+      description: >-
+        AI sprint risk analyst embedded in Jira. Ask about sprint risk, or let
+        me audit an issue, a sprint, or the whole board.
+      prompt: resource:agent-prompts;prompts/guardian-agent-prompt.txt
+      conversationStarters:
+        - What are the biggest risks in my current sprint?
+        - Audit issue PROJ-1 for hidden risks
+        - Which tickets lack acceptance criteria?
+        - Show me the risk trend for the current sprint
+      actions:
+        - get-sprint-snapshot
+        - audit-issue
+        - draft-follow-up-task
+        - annotate-issue
+      followUpPrompt: >-
+        Suggest one specific next action the engineer can take right now to
+        reduce risk, phrased as a question (for example, "Want me to draft the
+        follow-up task?").
+
+  rovo:skill:
+    - key: risk-audit-skill
+      source:
+        dir: skills/risk-audit
+      dependencies:
+        tools:
+          - get-sprint-snapshot
+          - audit-issue
+          - draft-follow-up-task
+          - annotate-issue
+    - key: remediation-skill
+      source:
+        dir: skills/remediation
+      dependencies:
+        # GET-only on purpose: agents invoked from automation rules cannot
+        # invoke CREATE/UPDATE/TRIGGER actions; the chat-invoked path keeps
+        # the write tools.
+        tools:
+          - get-sprint-snapshot
+          - audit-issue
+          - explain-risk-signal
+
+  rovo:mcp:
+    - key: guardian-mcp
+      name: Sprint Guardian tools
+      tools:
+        - get-sprint-snapshot
+        - audit-issue
+        - draft-follow-up-task
+        - annotate-issue
+        - explain-risk-signal
+        - run-board-scan
+
+  # ---------- Real-time hooks ----------
+  trigger:
+    - key: issue-created-trigger
+      function: on-issue-created
+      events:
+        - avi:jira:created:issue
+
+  # ---------- Continuous board scan ----------
+  scheduledTrigger:
+    - key: board-scan-trigger
+      function: board-scan
+      interval: hour
+
+  # ---------- Actions (agent + MCP callable) ----------
+  action:
+    - key: get-sprint-snapshot
+      name: Get sprint snapshot
+      function: act-get-sprint-snapshot
+      actionVerb: GET
+      description: >-
+        Fetch the current sprint snapshot: name, dates, scope, risk profile
+        (blocking issues, stale tickets, unestimated work, review load) and
+        the recent risk-score trend.
+      inputs:
+        boardId:
+          title: Board ID
+          type: string
+          required: false
+          description: Optional Jira board ID; defaults to the board found in context.
+
+    - key: audit-issue
+      name: Audit an issue for hidden risks
+      function: act-audit-issue
+      actionVerb: GET
+      description: >-
+        Deep-audit a single Jira issue for hidden risks: missing acceptance
+        criteria, unestimated work, overdue state, stale updates, linked pull
+        request state, and scope churn. Returns a scored risk report.
+      inputs:
+        issueKeyOrId:
+          title: Issue key or ID
+          type: string
+          required: true
+          description: The issue to audit, for example PROJ-123 or its numeric ID.
+
+    - key: explain-risk-signal
+      name: Explain a risk signal
+      function: act-explain-risk-signal
+      actionVerb: GET
+      description: >-
+        Return the plain-language definition, detection rule, and recommended
+        remediation for one risk signal (for example missing-acceptance-criteria
+        or stale-in-progress) with the thresholds the engine uses.
+      inputs:
+        signal:
+          title: Risk signal
+          type: string
+          required: true
+          description: Machine name of the signal, e.g. missing-acceptance-criteria.
+
+    - key: run-board-scan
+      name: Run a full board risk scan
+      function: act-run-board-scan
+      actionVerb: GET
+      description: >-
+        Scan every issue of the active sprint on the given board, recompute
+        all risk signals, persist the snapshot, and return a summary with the
+        top risks and the trend versus the previous scan.
+      inputs:
+        boardId:
+          title: Board ID
+          type: string
+          required: false
+          description: Optional Jira board ID; defaults to the board found in context.
+
+    - key: draft-follow-up-task
+      name: Draft follow-up task
+      function: act-draft-follow-up-task
+      actionVerb: CREATE
+      description: >-
+        Create a ready-to-review Jira subtask that captures risk findings as
+        structured follow-up work. Returns the new issue key and a link.
+      inputs:
+        parentIssueKey:
+          title: Parent issue key
+          type: string
+          required: true
+          description: The issue the follow-up should attach to, e.g. PROJ-123.
+        summary:
+          title: Task summary
+          type: string
+          required: true
+          description: One-line summary of the follow-up task.
+        riskSignal:
+          title: Risk signal
+          type: string
+          required: true
+          description: The risk signal that motivated this task (e.g. missing-acceptance-criteria).
+        findingsJson:
+          title: Findings (JSON)
+          type: string
+          required: false
+          description: Optional JSON string of findings to include in the description.
+
+    - key: annotate-issue
+      name: Annotate issue with risk report
+      function: act-annotate-issue
+      actionVerb: UPDATE
+      description: >-
+        Post the audit report as a formatted Jira comment with a risk-signal
+        breakdown, so the team sees the risk in context on the issue itself.
+      inputs:
+        issueKeyOrId:
+          title: Issue key or ID
+          type: string
+          required: true
+          description: The issue to annotate, for example PROJ-123.
+        reportJson:
+          title: Report (JSON)
+          type: string
+          required: false
+          description: Optional audit-report JSON; when omitted the issue is re-audited first.
+
+  # ---------- Backend functions ----------
+  function:
+    - key: resolver
+      handler: index.handler
+    - key: on-issue-created
+      handler: index.onIssueCreated
+    - key: board-scan
+      handler: index.boardScan
+      timeoutSeconds: 300
+    - key: act-get-sprint-snapshot
+      handler: index.actGetSprintSnapshot
+    - key: act-audit-issue
+      handler: index.actAuditIssue
+    - key: act-explain-risk-signal
+      handler: index.actExplainRiskSignal
+    - key: act-run-board-scan
+      handler: index.actRunBoardScan
+    - key: act-draft-follow-up-task
+      handler: index.actDraftFollowUpTask
+    - key: act-annotate-issue
+      handler: index.actAnnotateIssue
+
+resources:
+  - key: main-ui
+    path: src/frontend
+  - key: static-assets
+    path: assets
+  - key: agent-prompts
+    path: prompts
+
+permissions:
+  scopes:
+    # Jira: read work, write subtasks and comments
+    - read:jira-work
+    - write:jira-work
+    - read:jira-user
+    # Bitbucket: linked PR context for review-load signals
+    - read:repository:bitbucket
+    - read:pullrequest:bitbucket
+
+app:
+  runtime:
+    name: nodejs24.x
+  id: ari:cloud:ecosystem::app/REPLACE_WITH_YOUR_APP_ID
