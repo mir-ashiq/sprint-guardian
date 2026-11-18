@@ -20,13 +20,17 @@ import { createSubtask, postComment, textToAdf } from './backend/jira-client';
 const resolver = new Resolver();
 
 resolver.define('getBoards', async () => {
+  console.log('SG resolver: getBoards invoked');
   const boards = await getAllBoards();
+  console.log(`SG resolver: getBoards returned ${boards.length} boards`);
   return { boards };
 });
 
 resolver.define('getBoardState', async ({ payload }) => {
+  console.log(`SG resolver: getBoardState invoked for ${payload?.boardId}`);
   const boardId = String(payload.boardId);
   const [latest, trend] = await Promise.all([getLatest(boardId), getTrend(boardId)]);
+  console.log(`SG resolver: getBoardState latest=${JSON.stringify(latest)?.slice(0, 80)}`);
   return { latest, trend };
 });
 

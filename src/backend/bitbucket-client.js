@@ -10,12 +10,14 @@
  * Everything degrades gracefully: without a Bitbucket link the app still
  * works, just without review-load / PR evidence.
  */
-import api, { route } from '@forge/api';
+import api, { route, routeFromAbsolute } from '@forge/api';
 
 /** GET Jira REST as app; parsed JSON or null; never throws. */
 async function jget(url) {
   try {
-    const res = await api.asApp().requestJira(route`${url}`);
+    // Dynamic path+query strings must bypass route`` escaping (see jira-client)
+    const target = routeFromAbsolute(new URL(url, 'https://atlassian.net').href);
+    const res = await api.asApp().requestJira(target);
     if (!res.ok) return null;
     return await res.json();
   } catch {

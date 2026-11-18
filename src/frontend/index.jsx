@@ -113,7 +113,12 @@ function CommandCenter() {
           <Button key={b.id} appearance={String(b.id) === boardId ? 'primary' : 'default'} spacing="compact" onClick={() => setBoardId(String(b.id))}>{b.name}</Button>
         ))}
       </Inline>
-      {!s && <Spinner label="Loading last scan…" />}
+      {!s && !state && <Spinner label="Loading last scan…" />}
+      {!s && state && (
+        <SectionMessage appearance="information" title="No scan yet">
+          <Text as="p">This board has no stored scan. Click “Scan now” to audit the active sprint — the first scan takes a few seconds.</Text>
+        </SectionMessage>
+      )}
       {s && (
         <Stack space="space.200">
           <Inline space="space.200" blockAlign="center">

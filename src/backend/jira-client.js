@@ -9,15 +9,26 @@
  * /rest/api/3/search/jql (nextPageToken pagination). We try the new one
  * first and transparently fall back to the old one.
  */
-import api, { route } from '@forge/api';
+import api, { route, routeFromAbsolute } from '@forge/api';
 
-/** GET JSON or null — never throws. */
+/**
+ * GET JSON or null — never throws.
+ * URLs here are dynamic strings (path + query), so they cannot go through
+ * route`` — interpolated parameters containing "/" or "?" are rejected as
+ * path manipulation. routeFromAbsolute parses the URL and trusts its
+ * pathname+search instead.
+ */
 async function jget(url) {
   try {
-    const res = await api.asApp().requestJira(route`${url}`);
-    if (!res.ok) return null;
+    const target = routeFromAbsolute(new URL(url, 'https://atlassian.net').href);
+    const res = await api.asApp().requestJira(target);
+    if (!res.ok) {
+      console.warn(`SG jget ${String(url).slice(0, 60)} -> HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      return null;
+    }
     return await res.json();
-  } catch {
+  } catch (e) {
+    console.warn(`SG jget ${String(url).slice(0, 60)} threw: ${String(e).slice(0, 200)}`);
     return null;
   }
 }

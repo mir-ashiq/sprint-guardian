@@ -29,7 +29,7 @@ modules:
       description: >-
         AI sprint risk analyst embedded in Jira. Ask about sprint risk, or let
         me audit an issue, a sprint, or the whole board.
-      prompt: resource:agent-prompts;prompts/guardian-agent-prompt.txt
+      prompt: resource:agent-prompts;guardian-agent-prompt.txt
       conversationStarters:
         - What are the biggest risks in my current sprint?
         - Audit issue PROJ-1 for hidden risks
@@ -99,8 +99,8 @@ modules:
       actionVerb: GET
       description: >-
         Fetch the current sprint snapshot: name, dates, scope, risk profile
-        (blocking issues, stale tickets, unestimated work, review load) and
-        the recent risk-score trend.
+        (blocking issues, stale tickets, unestimated work, review load) and the
+        recent risk-score trend.
       inputs:
         boardId:
           title: Board ID
@@ -143,9 +143,9 @@ modules:
       function: act-run-board-scan
       actionVerb: GET
       description: >-
-        Scan every issue of the active sprint on the given board, recompute
-        all risk signals, persist the snapshot, and return a summary with the
-        top risks and the trend versus the previous scan.
+        Scan every issue of the active sprint on the given board, recompute all
+        risk signals, persist the snapshot, and return a summary with the top
+        risks and the trend versus the previous scan.
       inputs:
         boardId:
           title: Board ID
@@ -155,7 +155,7 @@ modules:
 
     - key: draft-follow-up-task
       name: Draft follow-up task
-      function: act-draft-follow-up-task
+      function: act-draft-followup
       actionVerb: CREATE
       description: >-
         Create a ready-to-review Jira subtask that captures risk findings as
@@ -175,7 +175,8 @@ modules:
           title: Risk signal
           type: string
           required: true
-          description: The risk signal that motivated this task (e.g. missing-acceptance-criteria).
+          description: The risk signal that motivated this task (e.g.
+            missing-acceptance-criteria).
         findingsJson:
           title: Findings (JSON)
           type: string
@@ -199,7 +200,8 @@ modules:
           title: Report (JSON)
           type: string
           required: false
-          description: Optional audit-report JSON; when omitted the issue is re-audited first.
+          description: Optional audit-report JSON; when omitted the issue is re-audited
+            first.
 
   # ---------- Backend functions ----------
   function:
@@ -218,14 +220,14 @@ modules:
       handler: index.actExplainRiskSignal
     - key: act-run-board-scan
       handler: index.actRunBoardScan
-    - key: act-draft-follow-up-task
+    - key: act-draft-followup
       handler: index.actDraftFollowUpTask
     - key: act-annotate-issue
       handler: index.actAnnotateIssue
 
 resources:
   - key: main-ui
-    path: src/frontend
+    path: src/frontend/index.jsx
   - key: static-assets
     path: assets
   - key: agent-prompts
@@ -237,11 +239,18 @@ permissions:
     - read:jira-work
     - write:jira-work
     - read:jira-user
-    # Bitbucket: linked PR context for review-load signals
-    - read:repository:bitbucket
-    - read:pullrequest:bitbucket
+    # agile/board endpoints used by the Command Center and the scan
+    - read:board-scope:jira-software
+    - read:sprint:jira-software
+    - read:issue-details:jira
+    - read:jql:jira
+    - read:project:jira
+    # NOTE: read:repository:bitbucket + read:pullrequest:bitbucket are
+    # workspace-class scopes and cannot be declared alongside site scopes.
+    # review-load therefore stays dormant until a Bitbucket link exists;
+    # the client degrades gracefully (no PRs -> no review-load signal).
 
 app:
   runtime:
     name: nodejs24.x
-  id: ari:cloud:ecosystem::app/REPLACE_WITH_YOUR_APP_ID
+  id: ari:cloud:ecosystem::app/259dbc37-e477-4903-b9f1-a627db301bbd
