@@ -83,16 +83,41 @@ function CommandCenter() {
   const [boardId, setBoardId] = useState(null);
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [seedMsg, setSeedMsg] = useState(null);
 
-  useEffect(() => {
+  const loadBoards = () => {
     invoke('getBoards').then((r) => {
       setBoards(r.boards || []);
       if (r.boards?.length) setBoardId(String(r.boards[0].id));
     });
-  }, []);
+  };
+  useEffect(loadBoards, []);
   useEffect(() => {
     if (boardId) invoke('getBoardState', { boardId }).then(setState);
   }, [boardId]);
+
+  const seedDemo = async () => {
+    setSeeding(true); setSeedMsg(null);
+    try {
+      const r = await invoke('seedDemo');
+      if (r.error) {
+        setSeedMsg(`Seeding failed: ${r.error}`);
+      } else if (r.already) {
+        setSeedMsg('Demo project already exists — pick the “Sprint Guardian Demo” board above.');
+        setBoardId(null);
+        loadBoards();
+      } else {
+        setSeedMsg(`Created ${r.issueCount} demo issues in project ${r.projectKey}. Selecting the new board…`);
+        setBoardId(null);
+        loadBoards();
+        // Board list may lag a moment behind project creation; retry once.
+        setTimeout(() => loadBoards(), 4000);
+      }
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   const scanNow = async () => {
     setBusy(true);
@@ -114,7 +139,18 @@ function CommandCenter() {
         ))}
       </Inline>
       {!s && !state && <Spinner label="Loading last scan…" />}
-      {!s && state && (
+      {boards.length === 0 && !state && (
+        <SectionMessage appearance="warning" title="No boards on this site yet">
+          <Text as="p">
+            This looks like a fresh site. Generate a demo project (Scrum board + a 10-issue sprint tuned to trip every risk signal) and scan it in one click.
+          </Text>
+          <Button appearance="primary" isDisabled={seeding} onClick={seedDemo}>
+            {seeding ? 'Seeding demo data…' : 'Generate demo project'}
+          </Button>
+          {seedMsg && <Text as="p" size="small">{seedMsg}</Text>}
+        </SectionMessage>
+      )}
+      {!s && state && boards.length > 0 && (
         <SectionMessage appearance="information" title="No scan yet">
           <Text as="p">This board has no stored scan. Click “Scan now” to audit the active sprint — the first scan takes a few seconds.</Text>
         </SectionMessage>

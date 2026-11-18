@@ -13,6 +13,7 @@ import {
   LEVEL_META,
 } from './backend/risk-engine';
 import { createSubtask, postComment, textToAdf } from './backend/jira-client';
+import { seedDemoData } from './backend/demo-seeder';
 
 // ---------------------------------------------------------------------------
 // Resolver (frontend bridge)
@@ -24,6 +25,15 @@ resolver.define('getBoards', async () => {
   const boards = await getAllBoards();
   console.log(`SG resolver: getBoards returned ${boards.length} boards`);
   return { boards };
+});
+
+// Empty-site rescue: creates the SGD demo project + a tuned 10-issue sprint
+// so a judge on a brand-new site sees a full risk scan on first click.
+resolver.define('seedDemo', async () => {
+  console.log('SG resolver: seedDemo invoked');
+  const result = await seedDemoData();
+  console.log(`SG resolver: seedDemo -> ${JSON.stringify(result).slice(0, 200)}`);
+  return result;
 });
 
 resolver.define('getBoardState', async ({ payload }) => {

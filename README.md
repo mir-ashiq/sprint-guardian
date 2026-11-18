@@ -32,6 +32,15 @@ Pure, deterministic, unit-tested (`npm test`, 20 assertions):
 | `blocking-dependency` | high | Blocked-by link to unresolved issue |
 | `scope-churn` | low | Description edited > 3 times (issue changelog) |
 
+## Judge quick path (fresh site, 60 seconds)
+
+The Command Center detects an empty site and offers **Generate demo project**:
+one click creates the `SGD` Scrum project with a 10-issue active sprint tuned
+so every risk signal fires (overdue bugs without estimates, stale work, a
+blocked dependency, thin descriptions). Click **Scan now** and the full risk
+radar populates — no manual data entry. The same seeder is idempotent and
+never touches existing projects.
+
 ## Quick start
 
 ```bash

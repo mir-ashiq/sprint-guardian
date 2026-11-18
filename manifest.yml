@@ -245,6 +245,9 @@ permissions:
     - read:issue-details:jira
     - read:jql:jira
     - read:project:jira
+    # demo-data seeder: create project/sprint on a judge's empty site so the
+    # Command Center has something to scan on first click
+    - write:sprint:jira-software
     # NOTE: read:repository:bitbucket + read:pullrequest:bitbucket are
     # workspace-class scopes and cannot be declared alongside site scopes.
     # review-load therefore stays dormant until a Bitbucket link exists;
