@@ -175,7 +175,13 @@ export async function getActiveSprintForIssue(issue) {
 
 /** All issues of the sprint currently active on a board. */
 export async function getSprintIssues(boardId) {
-  const jql = `sprint in openSprints() AND board = ${boardId}`;
+  // Query by sprint id, not `board = <id>`: the board JQL field matches no
+  // issues on current Jira Cloud versions for classic boards, which silently
+  // emptied every board scan. The sprint id comes from the (working) agile
+  // board endpoint, so this is also exact for boards sharing a sprint.
+  const sprint = await getActiveSprint(boardId);
+  if (!sprint) return [];
+  const jql = `sprint = ${sprint.id}`;
   const fields = [
     'summary', 'description', 'status', 'issuetype', 'assignee',
     'updated', 'created', 'issuelinks', 'sprint',
