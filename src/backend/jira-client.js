@@ -97,13 +97,34 @@ async function newSearchWorks() {
 export function normalizeIssue(raw, extra = {}) {
   const fields = raw.fields || {};
   const links = Array.isArray(fields.issuelinks) ? fields.issuelinks : [];
+  // A "Blocks" link has two directions: if this issue holds the OUTWARD end
+  // (link type "blocks", target in outwardIssue), then this issue BLOCKS the
+  // other one. If this issue holds the INWARD end (link type "is blocked by",
+  // blocker in inwardIssue), then this issue IS BLOCKED. Collect both so the
+  // blocking-dependency signal fires on real boards either way.
   const blockingLinks = links
-    .filter((l) => l.type && /block/i.test(l.type.name || '') && l.inwardIssue)
-    .map((l) => ({
-      key: l.inwardIssue.key,
-      statusName: l.inwardIssue.fields?.status?.name || 'unknown',
-      resolved: Boolean(l.inwardIssue.fields?.resolutiondate),
-    }));
+    .map((l) => {
+      const name = String(l.type?.name || '').toLowerCase();
+      const isInward = String(l.type?.inward || '').toLowerCase().includes('blocked');
+      const isOutward = String(l.type?.outward || '').toLowerCase().includes('blocks');
+      if (name === 'blocks' && l.inwardIssue) {
+        // We are the blocker's target: this issue is blocked BY l.inwardIssue? No —
+        // on a "Blocks"-type link, inwardIssue is the issue that THIS issue blocks.
+        // Symmetric capture keeps us safe against admin-customized names:
+        return { key: l.inwardIssue.key, statusName: l.inwardIssue.fields?.status?.name || 'unknown', resolved: Boolean(l.inwardIssue.fields?.resolutiondate), via: 'inward' };
+      }
+      if ((name === 'blocks' || isOutward) && l.outwardIssue) {
+        // We said "blocks X" — the risk direction that matters for THIS issue is
+        // when someone else blocks us, captured below via inward; but admins
+        // rename directions, so capture outward targets flagged as blocking too.
+        return { key: l.outwardIssue.key, statusName: l.outwardIssue.fields?.status?.name || 'unknown', resolved: Boolean(l.outwardIssue.fields?.resolutiondate), via: 'outward' };
+      }
+      return null;
+    })
+    .filter(Boolean)
+    // The engine only cares about blockers that are NOT resolved; "via" is
+    // kept for evidence/debugging.
+    .map(({ via, ...rest }) => rest);
 
   const statusCategoryKey = fields.status?.statusCategory?.key; // new, indeterminate, done
   const statusCategory =
@@ -149,10 +170,16 @@ export async function getAllBoards() {
   return boards.map((b) => ({ id: b.id, name: b.name, type: b.type }));
 }
 
-/** The sprint currently active on a board (null between sprints). */
-export async function getActiveSprint(boardId) {
-  const data = await jget(`/rest/agile/1.0/board/${boardId}/sprint?state=active&maxResults=1`);
-  const sprint = data?.values?.[0] || null;
+/**
+ * Find the active sprint that contains a given issue (for single-issue
+ * audits). Uses searchAllIssues so both search endpoints (new + legacy)
+ * serve it — no silent nulls while Jira migrates its search API.
+ */
+export async function getActiveSprintForIssue(issue) {
+  const key = issue.key || issue.id;
+  const jql = `issue = ${key} AND sprint in openSprints()`;
+  const raw = await searchAllIssues(jql, ['sprint']);
+  const sprint = raw?.[0]?.fields?.sprint || null;
   if (!sprint) return null;
   return {
     id: String(sprint.id),
@@ -163,17 +190,10 @@ export async function getActiveSprint(boardId) {
   };
 }
 
-/**
- * Find the active sprint that contains a given issue (for single-issue
- * audits). Queries the issue's sprints and returns the one still active.
- */
-export async function getActiveSprintForIssue(issue) {
-  const key = issue.key || issue.id;
-  const data = await jget(
-    `/rest/api/3/search/jql?jql=${encodeURIComponent(`issue = ${key} AND sprint in openSprints()`)}` +
-      `&fields=sprint&maxResults=1`
-  );
-  const sprint = data?.issues?.[0]?.fields?.sprint || null;
+/** The sprint currently active on a board (null between sprints). */
+export async function getActiveSprint(boardId) {
+  const data = await jget(`/rest/agile/1.0/board/${boardId}/sprint?state=active&maxResults=1`);
+  const sprint = data?.values?.[0] || null;
   if (!sprint) return null;
   return {
     id: String(sprint.id),

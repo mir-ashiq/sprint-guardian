@@ -220,6 +220,9 @@ modules:
       handler: index.actExplainRiskSignal
     - key: act-run-board-scan
       handler: index.actRunBoardScan
+      # Scan actions get a generous timeout so big boards cannot blow the
+      # 10s default mid-scan.
+      timeoutSeconds: 120
     - key: act-draft-followup
       handler: index.actDraftFollowUpTask
     - key: act-annotate-issue

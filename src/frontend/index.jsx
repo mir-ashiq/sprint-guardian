@@ -7,19 +7,31 @@
 import React, { useEffect, useState } from 'react';
 import ForgeReconciler, {
   Text, Heading, Box, Stack, Inline, Button, Lozenge, SectionMessage, Spinner,
-  useProductContext,
+  Link, useProductContext,
 } from '@forge/react';
 import { invoke } from '@forge/bridge';
 
 const LEVEL_APPEARANCE = { low: 'success', medium: 'new', high: 'removed' };
 const LEVEL_EMOJI = { low: '🟢', medium: '🟡', high: '🔴' };
 
+// Machine names are for the engine; humans get the catalog label.
+const SIGNAL_LABELS = {
+  'missing-acceptance-criteria': 'Missing acceptance criteria',
+  'unestimated-work': 'Unestimated work',
+  'stale-in-progress': 'Stale in progress',
+  'overdue-sprint-item': 'Overdue sprint item',
+  'review-load': 'Review load',
+  'blocking-dependency': 'Blocking dependency',
+  'scope-churn': 'Scope churn',
+};
+const label = (sig) => SIGNAL_LABELS[sig] || sig;
+
 function SignalRow({ f, onDraft, onExplain }) {
   return (
     <Stack space="small" xcss={{ backgroundColor: 'elevation.surface.sunken', padding: 'space.150', borderRadius: '3px' }}>
       <Inline space="space.100" grow="fill" blockAlign="center">
         <Lozenge appearance={f.severity === 'high' ? 'removed' : f.severity === 'medium' ? 'new' : 'default'}>{f.severity}</Lozenge>
-        <Text weight="medium">{f.signal}</Text>
+        <Text weight="medium">{label(f.signal)}</Text>
       </Inline>
       <Text size="small" as="p">{f.evidence}</Text>
       <Text size="small" as="p">→ {f.suggestedAction}</Text>
@@ -30,6 +42,19 @@ function SignalRow({ f, onDraft, onExplain }) {
         </Inline>
       )}
     </Stack>
+  );
+}
+
+/** Tiny inline sparkline from KVS trend points — no chart library needed. */
+function Sparkline({ points }) {
+  if (!points || points.length < 2) return null;
+  const w = 160, h = 28, max = Math.max(...points, 1);
+  const step = w / (points.length - 1);
+  const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${(h - (p / max) * (h - 4) - 2).toFixed(1)}`).join(' ');
+  return (
+    <svg width={w} height={h} style={{ verticalAlign: 'middle' }} aria-label="risk trend">
+      <path d={d} fill="none" stroke="#DE350B" strokeWidth="2" />
+    </svg>
   );
 }
 
@@ -47,7 +72,14 @@ function AuditView({ issueKey, compact }) {
 
   if (busy && !report) return <Spinner size="medium" label="Auditing…" />;
   if (!report) return null;
-  if (report.error) return <SectionMessage appearance="warning" title="Audit unavailable"><Text as="p">{report.error}</Text></SectionMessage>;
+  if (report.error) {
+    const hint = /403/.test(report.error)
+      ? 'The app may be missing a scope, or the issue is not visible to it. Try reinstalling with all requested permissions.'
+      : /404/.test(report.error)
+        ? 'The issue could not be found. If it was just created, give Jira a moment and reopen the panel.'
+        : report.error;
+    return <SectionMessage appearance="warning" title="Audit unavailable"><Text as="p">{hint}</Text></SectionMessage>;
+  }
 
   const draft = async (f) => {
     setBusy(true);
@@ -59,6 +91,7 @@ function AuditView({ issueKey, compact }) {
     });
     setMsg(res); setBusy(false);
   };
+  // A created subtask comes back as {key}; render it as a link.
 
   return (
     <Stack space="space.200">
@@ -73,7 +106,15 @@ function AuditView({ issueKey, compact }) {
       {report.findings.map((f) => (
         <SignalRow key={f.signal} f={f} onDraft={compact ? undefined : draft} />
       ))}
-      {msg && <SectionMessage appearance="info" title="Action"><Text as="p">{String(msg)}</Text></SectionMessage>}
+      {msg && (
+        <SectionMessage appearance="info" title="Action">
+          <Text as="p">
+            {typeof msg === 'object' && msg.key
+              ? <>Created <Link href={`/browse/${msg.key}`}>{msg.key}</Link> under {issueKey}.</>
+              : String(msg)}
+          </Text>
+        </SectionMessage>
+      )}
     </Stack>
   );
 }
@@ -111,8 +152,10 @@ function CommandCenter() {
         setSeedMsg(`Created ${r.issueCount} demo issues in project ${r.projectKey}. Selecting the new board…`);
         setBoardId(null);
         loadBoards();
-        // Board list may lag a moment behind project creation; retry once.
+        // Board list can lag project creation on fresh sites; retry a few times.
         setTimeout(() => loadBoards(), 4000);
+        setTimeout(() => loadBoards(), 9000);
+        setTimeout(() => loadBoards(), 15000);
       }
     } finally {
       setSeeding(false);
@@ -167,7 +210,7 @@ function CommandCenter() {
             {Object.entries(s.bySignal).sort((a, b) => b[1] - a[1]).map(([sig, n]) => (
               <Inline key={sig} space="space.100" blockAlign="center">
                 <Lozenge>{n}×</Lozenge>
-                <Text>{sig}</Text>
+                <Text>{label(sig)}</Text>
               </Inline>
             ))}
             {Object.keys(s.bySignal).length === 0 && <Text>No signals — clean sprint.</Text>}
@@ -179,13 +222,15 @@ function CommandCenter() {
                 <Lozenge appearance={t.score >= 5 ? 'removed' : 'new'}>{t.score}</Lozenge>
                 <Text weight="medium">{t.key}</Text>
                 <Text size="small">{t.summary}</Text>
-                <Text size="small" as="em">{t.signals.join(', ')}</Text>
+                <Text size="small" as="em">{t.signals.map(label).join(', ')}</Text>
               </Inline>
             ))}
           </Stack>
-          <Text size="small" as="p">Trend ({(state?.trend || []).length} snapshots stored): {' '}
-            {(state?.trend || []).slice(-10).map((p) => `${p.avgScore}`).join(' → ') || 'collecting…'}
-          </Text>
+          <Inline space="space.150" blockAlign="center">
+            <Text size="small" as="p">Trend ({(state?.trend || []).length} snapshots):</Text>
+            <Sparkline points={(state?.trend || []).slice(-14).map((p) => p.avgScore)} />
+            <Text size="small" as="p">{(state?.trend || []).slice(-10).map((p) => p.avgScore).join(' → ') || 'collecting…'}</Text>
+          </Inline>
           <SectionMessage appearance="information" title="Talk to the agent">
             <Text as="p">Open Rovo Chat → Browse Agents → enable “Sprint Guardian”, then ask: “What are the biggest risks in my current sprint?” The agent uses the same actions as this page and can create follow-up subtasks for you.</Text>
           </SectionMessage>
@@ -203,6 +248,7 @@ function App() {
     return (
       <Stack space="space.200">
         <Heading as="h4">🛡️ Risk Radar</Heading>
+        <Text size="small" as="p">Live audit of this issue — 7 deterministic signals with evidence. Open Apps → Sprint Guardian for the board-wide Command Center.</Text>
         {issueKey ? <AuditView issueKey={issueKey} compact={false} /> : <Text>Open on an issue to audit it.</Text>}
       </Stack>
     );

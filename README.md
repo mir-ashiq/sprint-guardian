@@ -8,6 +8,13 @@ through a UI, a Rovo agent, or MCP.
 > Teams don't fail sprints because work is hard. They fail because risk is
 > invisible until it's too late. Sprint Guardian makes it visible early.
 
+## Judge quick path (fresh site, 60 seconds)
+
+> **Install → open Apps → Sprint Guardian → "Generate demo project" → "Scan now".**
+> The seeder creates the `SGD` project with a 10-issue sprint tuned so every
+> risk signal fires (including a real Blocks link and an ended sprint), and it
+> never touches existing data.
+
 ## What it does
 
 | Surface | Module | What the user gets |
@@ -20,7 +27,7 @@ through a UI, a Rovo agent, or MCP.
 
 ## Risk signals (the engine)
 
-Pure, deterministic, unit-tested (`npm test`, 20 assertions):
+Pure, deterministic, unit-tested (`npm test`, 23 tests — see the CI badge):
 
 | Signal | Severity | Detection |
 |---|---|---|
@@ -32,14 +39,27 @@ Pure, deterministic, unit-tested (`npm test`, 20 assertions):
 | `blocking-dependency` | high | Blocked-by link to unresolved issue |
 | `scope-churn` | low | Description edited > 3 times (issue changelog) |
 
-## Judge quick path (fresh site, 60 seconds)
 
-The Command Center detects an empty site and offers **Generate demo project**:
-one click creates the `SGD` Scrum project with a 10-issue active sprint tuned
-so every risk signal fires (overdue bugs without estimates, stale work, a
-blocked dependency, thin descriptions). Click **Scan now** and the full risk
-radar populates — no manual data entry. The same seeder is idempotent and
-never touches existing projects.
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Surfaces
+    P[jira:issuePanel<br/>Risk Radar] --> R
+    G[jira:globalPage<br/>Command Center] --> R
+    A[rovo:agent + 2 skills] --> ACT[6 actions]
+    M[rovo:mcp server] --> ACT
+  end
+  R[resolver] --> SCAN[scan orchestrator]
+  ACT --> SCAN
+  T[trigger: issue created] --> SCAN
+  ST[scheduledTrigger: hourly] --> SCAN
+  SCAN --> ENG[pure risk engine<br/>7 signals, 23 tests]
+  SCAN --> KVS[(KVS snapshots<br/>trend)]
+  SCAN --> J[(Jira REST v3)]
+  SCAN --> B[(Bitbucket dev-status)]
+  SEED[demo seeder] --> J
+```
 
 ## Quick start
 

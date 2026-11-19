@@ -65,10 +65,13 @@ resolver.define('getSignalCatalog', async () => {
   };
 });
 
-// Panel button: same logic as the agent's draft-follow-up-task action.
+// Panel button: same logic as the agent's draft-follow-up-task action,
+// but returns {key} (parsed from the action's string reply) so the UI can
+// deep-link the created subtask.
 resolver.define('draftFollowUp', async ({ payload }) => {
   const result = await actDraftFollowUpTask(payload);
-  return result;
+  const m = typeof result === 'string' ? result.match(/([A-Z][A-Z0-9]+-\d+)/) : null;
+  return m ? { key: m[1] } : result;
 });
 
 export const handler = resolver.getDefinitions();
@@ -205,10 +208,11 @@ export async function actAnnotateIssue(payload) {
   if (report.error) return report.error;
 
   const meta = LEVEL_META[report.level] || LEVEL_META.low;
+  // Reuse the ADF paragraph helper — one way to build comments in this app.
   const bulletLines = report.findings.map((f) => ({
     type: 'paragraph',
     content: [{ type: 'text', text: `${f.severity === 'high' ? '🔴' : f.severity === 'medium' ? '🟡' : '🟢'} ${f.signal} — ${f.evidence} → ${f.suggestedAction}` }],
-  }));
+  })).filter(Boolean);
   const adf = {
     type: 'doc',
     version: 1,

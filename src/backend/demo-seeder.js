@@ -94,8 +94,9 @@ function demoIssues() {
       description: 'Test fails about 1 run in 5 on CI. Suspect ordering dependency.',
       labels: ['sg-demo'],
       assignee: true,
-      // overdue and unestimated
+      // overdue and unestimated, and blocked by the payment-gateway bug above
       duedate: daysAgo(6),
+      blockedBy: 'Payment gateway returns 422 for stored cards',
     },
     {
       summary: 'Update onboarding emails',
@@ -178,6 +179,7 @@ export async function seedDemoData() {
 
   // 3. Create the 10 issues.
   const created = [];
+  const createdByKey = {};
   for (const spec of demoIssues()) {
     const fields = {
       project: { id: projectId },
@@ -190,21 +192,42 @@ export async function seedDemoData() {
       const me = await getMyAccountId();
       if (me) fields.assignee = { id: me };
     }
-    if (spec.estimate) fields.timetracking = { originalEstimate: `${spec.estimate}d` };
+    // Story points (Team-managed + company-managed boards both read this field
+    // as the estimate); timetracking is a DIFFERENT field the risk engine never reads.
+    if (spec.estimate) fields.customfield_10016 = spec.estimate;
     if (spec.duedate) fields.duedate = spec.duedate;
     const issue = await jpost('/rest/api/3/issue', fields);
-    if (!issue.error && issue.key) created.push(issue.key);
+    if (!issue.error && issue.key) {
+      created.push(issue.key);
+      // "is blocked by" link: remember key + target for the link pass below.
+      if (spec.blockedBy && createdByKey[spec.blockedBy]) {
+        await jpost('/rest/api/3/issueLink', {
+          type: { name: 'Blocks' },
+          inwardIssue: { key: issue.key },          // inward = the blocked one
+          outwardIssue: { key: createdByKey[spec.blockedBy] }, // outward = the blocker
+        });
+      }
+      createdByKey[spec.summary] = issue.key;
+    }
   }
 
-  // 4. Find the board the template created; start a sprint with everything.
-  const boards = await jget(`/rest/agile/1.0/board?projectKeyOrId=${projectId}`);
-  const boardId = boards?.values?.[0]?.id ?? null;
+  // 4. Find the board the template created; poll up to 3x (board creation
+  //    can lag project creation by a second or two on fresh sites).
+  let boardId = null;
+  for (let attempt = 0; attempt < 3 && !boardId; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, 2500));
+    const boards = await jget(`/rest/agile/1.0/board?projectKeyOrId=${projectId}`);
+    boardId = boards?.values?.[0]?.id ?? null;
+  }
 
   let sprintName = null;
   if (boardId) {
+    const iso = (offsetDays) => new Date(Date.now() + offsetDays * 86400000).toISOString();
     const sprint = await jpost(`/rest/agile/1.0/sprint`, {
       name: 'Demo Sprint 1 — pressure test',
       originBoardId: boardId,
+      startDate: iso(-14), // started two weeks ago…
+      endDate: iso(-1),    // …and ended yesterday -> overdue-sprint-item fires
     });
     if (!sprint.error && sprint.id) {
       if (created.length) {

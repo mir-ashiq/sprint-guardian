@@ -99,8 +99,14 @@ export async function computeReviewLoad(issues) {
       url: p.url,
     }));
     if (open.length > 0) {
+      // Attribute to the PR author when we can match them to the issue's
+      // assignee by name; fall back to the assignee id/name. (PRs have no
+      // Aries — matching is by displayName, which is what Jira shows.)
+      const byName = open.filter((p) => (p.authors || []).some((a) =>
+        a && issue.assigneeName && a.toLowerCase() === issue.assigneeName.toLowerCase()
+      )).length;
       const owner = issue.assigneeId || issue.assigneeName || 'unassigned';
-      openPrCountByAssignee[owner] = (openPrCountByAssignee[owner] || 0) + open.length;
+      openPrCountByAssignee[owner] = (openPrCountByAssignee[owner] || 0) + (byName || open.length);
     }
   }
   return { openPrCountByAssignee, issuePrs };
